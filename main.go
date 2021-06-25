@@ -12,8 +12,13 @@ import (
 )
 
 type App struct {
-	ds *discordgo.Session
+	client *discordgo.Session
 }
+
+const (
+	WIPE_INTERVAL  = time.Minute * 10
+	WIPE_THRESHOLD = time.Hour * 24
+)
 
 func main() {
 	discordToken := os.Getenv("DISCORD_TOKEN")
@@ -21,19 +26,19 @@ func main() {
 		log.Fatal("DISCORD_TOKEN is not specified")
 	}
 
-	ds, err := discordgo.New("Bot " + discordToken)
+	client, err := discordgo.New("Bot " + discordToken)
 	if err != nil {
 		log.Fatalf(err, "discord session")
 	}
-	defer ds.Close()
+	defer client.Close()
 
-	err = ds.Open()
+	err = client.Open()
 	if err != nil {
 		log.Fatalf(err, "discord open")
 	}
 
 	app := &App{
-		ds: ds,
+		client: client,
 	}
 
 	for {
@@ -42,18 +47,18 @@ func main() {
 			log.Error(err)
 		}
 
-		time.Sleep(time.Minute)
+		time.Sleep(WIPE_INTERVAL)
 	}
 }
 
 func (app *App) Wipe() error {
-	guilds, err := app.ds.UserGuilds(0, "", "")
+	guilds, err := app.client.UserGuilds(0, "", "")
 	if err != nil {
 		return karma.Format(err, "list guilds")
 	}
 
 	for _, guild := range guilds {
-		channels, err := app.ds.GuildChannels(guild.ID)
+		channels, err := app.client.GuildChannels(guild.ID)
 		if err != nil {
 			return karma.Format(err, "list channels: %s", guild.ID)
 		}
@@ -63,7 +68,7 @@ func (app *App) Wipe() error {
 				continue
 			}
 
-			limit := 10
+			limit := 100
 			beforeID := ""
 			for {
 				log.Infof(
@@ -75,7 +80,7 @@ func (app *App) Wipe() error {
 					channel.Name,
 				)
 
-				messages, err := app.ds.ChannelMessages(
+				messages, err := app.client.ChannelMessages(
 					channel.ID,
 					limit,
 					beforeID,
@@ -97,14 +102,14 @@ func (app *App) Wipe() error {
 						)
 					}
 
-					if time.Since(timestamp) > time.Minute {
+					if time.Since(timestamp) > WIPE_THRESHOLD {
 						bulkDelete = append(bulkDelete, message.ID)
 					}
 				}
 
 				if len(bulkDelete) > 0 {
 					log.Infof(nil, "bulk delete: %d messages", len(bulkDelete))
-					err = app.ds.ChannelMessagesBulkDelete(
+					err = app.client.ChannelMessagesBulkDelete(
 						channel.ID,
 						bulkDelete,
 					)
